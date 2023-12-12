@@ -430,11 +430,14 @@ class RunCommand extends Command
 
     private function getBasicCommandLineArgs(): array
     {
-        $args = array(
-            PHP_BINARY,
-            $_SERVER['SYMFONY_CONSOLE_FILE'] ?? $_SERVER['argv'][0],
-            '--env='.$this->env
-        );
+        $args = [PHP_BINARY];
+
+        if($memoryLimit = ini_get('memory_limit')){
+            $args[] = "-d memory_limit={$memoryLimit}";
+        }
+
+        $args[] = $_SERVER['SYMFONY_CONSOLE_FILE'] ?? $_SERVER['argv'][0];
+        $args[] =  '--env='.$this->env;
 
         if ($this->verbose) {
             $args[] = '--verbose';
