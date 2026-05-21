@@ -32,7 +32,7 @@
             <argument type="service" id="jms_job_queue.retry_scheduler" />
         </service>
 
-        <service id="JMS\JobQueueBundle\Controller\JobController" public="true" autowire="true">
+        <service id="JMS\JobQueueBundle\Controller\JobController" public="true" autowire="true" autoconfigure="true">
             <argument type="service" id="doctrine" />
             <argument type="service" id="jms_job_queue.job_manager" />
             <tag name="controller.service_arguments" />
