@@ -22,7 +22,9 @@ class JobFilter
 
     public function isDefaultPage()
     {
-        return $this->page === 1 && empty($this->command) && empty($this->state);
+        return $this->page === 1
+            && ($this->command === null || $this->command === '')
+            && ($this->state === null || $this->state === '');
     }
 
     public function toArray()

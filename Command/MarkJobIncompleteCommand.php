@@ -15,7 +15,7 @@ class MarkJobIncompleteCommand extends Command
 {
     protected static $defaultName = 'jms-job-queue:mark-incomplete';
 
-    public function __construct(private ManagerRegistry $registry, private JobManager $jobManager)
+    public function __construct(private readonly ManagerRegistry $registry, private readonly JobManager $jobManager)
     {
         parent::__construct();
     }
@@ -28,7 +28,7 @@ class MarkJobIncompleteCommand extends Command
         ;
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    protected function execute(InputInterface $input, OutputInterface $output): int
     {
         /** @var EntityManager $em */
         $em = $this->registry->getManagerForClass(Job::class);

@@ -84,13 +84,13 @@ class Application extends BaseApplication
             return;
         }
 
-        $this->getConnection()->executeUpdate(
+        $this->getConnection()->executeStatement(
             "UPDATE jms_jobs SET stackTrace = :trace, memoryUsage = :memoryUsage, memoryUsageReal = :memoryUsageReal WHERE id = :id",
             [
                 'id' => $jobId,
                 'memoryUsage' => memory_get_peak_usage(),
                 'memoryUsageReal' => memory_get_peak_usage(true),
-                'trace' => serialize($ex ? FlattenException::create($ex) : null),
+                'trace' => serialize($ex !== null ? FlattenException::create($ex) : null),
             ],
             [
                 'id' => \PDO::PARAM_INT,

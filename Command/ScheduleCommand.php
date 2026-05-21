@@ -19,7 +19,7 @@ class ScheduleCommand extends Command
 {
     protected static $defaultName = 'jms-job-queue:schedule';
 
-    public function __construct(private ManagerRegistry $registry, private iterable $schedulers, private iterable $cronCommands)
+    public function __construct(private readonly ManagerRegistry $registry, private readonly iterable $schedulers, private readonly iterable $cronCommands)
     {
         parent::__construct();
     }
@@ -33,7 +33,7 @@ class ScheduleCommand extends Command
         ;
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $maxRuntime = $input->getOption('max-runtime');
         if ($maxRuntime > 300) {
@@ -49,7 +49,7 @@ class ScheduleCommand extends Command
         }
 
         $jobSchedulers = $this->populateJobSchedulers();
-        if (empty($jobSchedulers)) {
+        if ($jobSchedulers === []) {
             $output->writeln('No job schedulers found, exiting...');
 
             return \Symfony\Component\Console\Command\Command::SUCCESS;
@@ -110,7 +110,7 @@ class ScheduleCommand extends Command
         $con = $em->getConnection();
 
         $now = new \DateTime();
-        $affectedRows = $con->executeUpdate(
+        $affectedRows = $con->executeStatement(
             "UPDATE jms_cron_jobs SET lastRunAt = :now WHERE command = :command AND lastRunAt = :lastRunAt",
             [
                 'now' => $now,
@@ -139,8 +139,8 @@ class ScheduleCommand extends Command
     private function populateJobSchedulers()
     {
         $schedulers = [];
+        /** @var JobScheduler $scheduler */
         foreach ($this->schedulers as $scheduler) {
-            /** @var JobScheduler $scheduler */
             foreach ($scheduler->getCommands() as $name) {
                 $schedulers[$name] = $scheduler;
             }

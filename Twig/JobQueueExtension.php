@@ -9,7 +9,7 @@ use Twig\TwigTest;
 
 class JobQueueExtension extends AbstractExtension
 {
-    public function __construct(private array $linkGenerators = [])
+    public function __construct(private readonly array $linkGenerators = [])
     {
     }
 

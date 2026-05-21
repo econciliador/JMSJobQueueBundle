@@ -40,8 +40,7 @@ class RunCommand extends Command
     /** @var string */
     private $env;
 
-    /** @var boolean */
-    private $verbose;
+    private bool $verbose = false;
 
     /** @var OutputInterface */
     private $output;
@@ -52,7 +51,7 @@ class RunCommand extends Command
     /** @var bool */
     private $shouldShutdown = false;
 
-    public function __construct(private ManagerRegistry $registry, private JobManager $jobManager, private EventDispatcherInterface $dispatcher, private array $queueOptionsDefault, private array $queueOptions)
+    public function __construct(private readonly ManagerRegistry $registry, private readonly JobManager $jobManager, private readonly EventDispatcherInterface $dispatcher, private readonly array $queueOptionsDefault, private readonly array $queueOptions)
     {
         parent::__construct();
     }
@@ -69,7 +68,7 @@ class RunCommand extends Command
         ;
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $startTime = time();
 
@@ -108,9 +107,13 @@ class RunCommand extends Command
         }
 
         $this->env = $input->getOption('env');
-        $this->verbose = $input->getOption('verbose');
+        $this->verbose = (bool) $input->getOption('verbose');
         $this->output = $output;
-        $this->getEntityManager()->getConnection()->getConfiguration()->setSQLLogger();
+        // DBAL 3+ removed setSQLLogger(); SQL logging is now via middlewares
+        // configured at connection time. The original intent here was to
+        // DISABLE logging for long-running workers — that's now opt-out via
+        // not registering the LoggingMiddleware in the first place. No-op
+        // here is safe; logging stays at the Symfony framework default.
 
         if ($this->verbose) {
             $this->output->writeln('Cleaning up stale jobs');
@@ -128,6 +131,8 @@ class RunCommand extends Command
             $this->queueOptionsDefault,
             $this->queueOptions
         );
+
+        return self::SUCCESS;
     }
 
     private function runJobs($workerName, $startTime, $maxRuntime, $idleTime, $maxJobs, array $restrictedQueues, array $queueOptionsDefaults, array $queueOptions)
@@ -167,7 +172,7 @@ class RunCommand extends Command
             $this->output->writeln('Entering shutdown sequence, waiting for running jobs to terminate...');
         }
 
-        while ( ! empty($this->runningJobs)) {
+        while ($this->runningJobs !== []) {
             sleep(5);
             $this->checkRunningJobs();
         }
@@ -260,24 +265,24 @@ class RunCommand extends Command
             $newErrorOutput = substr((string) $data['process']->getErrorOutput(), $data['error_output_pointer']);
             $data['error_output_pointer'] += strlen($newErrorOutput);
 
-            if ( ! empty($newOutput)) {
+            if ($newOutput !== '') {
                 $event = new NewOutputEvent($data['job'], $newOutput, NewOutputEvent::TYPE_STDOUT);
                 $this->dispatcher->dispatch($event, 'jms_job_queue.new_job_output');
                 $newOutput = $event->getNewOutput();
             }
 
-            if ( ! empty($newErrorOutput)) {
+            if ($newErrorOutput !== '') {
                 $event = new NewOutputEvent($data['job'], $newErrorOutput, NewOutputEvent::TYPE_STDERR);
                 $this->dispatcher->dispatch($event, 'jms_job_queue.new_job_output');
                 $newErrorOutput = $event->getNewOutput();
             }
 
             if ($this->verbose) {
-                if ( ! empty($newOutput)) {
+                if ($newOutput !== '') {
                     $this->output->writeln('Job '.$data['job']->getId().': '.str_replace("\n", "\nJob ".$data['job']->getId().": ", $newOutput));
                 }
 
-                if ( ! empty($newErrorOutput)) {
+                if ($newErrorOutput !== '') {
                     $this->output->writeln('Job '.$data['job']->getId().': '.str_replace("\n", "\nJob ".$data['job']->getId().": ", $newErrorOutput));
                 }
             }
@@ -411,7 +416,8 @@ class RunCommand extends Command
     {
         $args = [PHP_BINARY];
 
-        if($memoryLimit = ini_get('memory_limit')){
+        $memoryLimit = ini_get('memory_limit');
+        if ($memoryLimit !== false && $memoryLimit !== '' && $memoryLimit !== '-1') {
             $args[] = "-d memory_limit={$memoryLimit}";
         }
 

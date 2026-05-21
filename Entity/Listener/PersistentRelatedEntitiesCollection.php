@@ -23,7 +23,7 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable, \St
 {
     private $entities;
 
-    public function __construct(private ManagerRegistry $registry, private Job $job)
+    public function __construct(private readonly ManagerRegistry $registry, private readonly Job $job)
     {
     }
 
@@ -466,16 +466,17 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable, \St
         $expr     = $criteria->getWhereExpression();
         $filtered = $this->entities;
 
-        if ($expr) {
+        if ($expr !== null) {
             $visitor  = new ClosureExpressionVisitor();
             $filter   = $visitor->dispatch($expr);
             $filtered = array_filter($filtered, $filter);
         }
 
-        if (null !== $orderings = $criteria->getOrderings()) {
+        $orderings = $criteria->orderings();
+        if ($orderings !== []) {
             $next = null;
             foreach (array_reverse($orderings) as $field => $ordering) {
-                $next = ClosureExpressionVisitor::sortByField($field, $ordering == 'DESC' ? -1 : 1, $next);
+                $next = ClosureExpressionVisitor::sortByField($field, $ordering === 'DESC' ? -1 : 1, $next);
             }
 
             usort($filtered, $next);
@@ -484,7 +485,7 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable, \St
         $offset = $criteria->getFirstResult();
         $length = $criteria->getMaxResults();
 
-        if ($offset || $length) {
+        if ($offset !== null || $length !== null) {
             $filtered = array_slice($filtered, (int)$offset, $length);
         }
 
@@ -535,7 +536,9 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable, \St
             return;
         }
 
-        $con = $this->registry->getManagerForClass(\JMS\JobQueueBundle\Entity\Job::class)->getConnection();
+        /** @var \Doctrine\ORM\EntityManagerInterface $jobEm */
+        $jobEm = $this->registry->getManagerForClass(\JMS\JobQueueBundle\Entity\Job::class);
+        $con = $jobEm->getConnection();
         $entitiesPerClass = [];
         $count = 0;
         foreach ($con->executeQuery("SELECT related_class, related_id FROM jms_job_related_entities WHERE job_id = ".$this->job->getId()) as $data) {
@@ -551,6 +554,7 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable, \St
 
         $entities = [];
         foreach ($entitiesPerClass as $className => $ids) {
+            /** @var \Doctrine\ORM\EntityManagerInterface $em */
             $em = $this->registry->getManagerForClass($className);
             $qb = $em->createQueryBuilder()
                         ->select('e')->from($className, 'e');

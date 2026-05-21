@@ -18,7 +18,7 @@ class ManyToAnyListener
 {
     private $ref;
 
-    public function __construct(private \Doctrine\Persistence\ManagerRegistry $registry)
+    public function __construct(private readonly \Doctrine\Persistence\ManagerRegistry $registry)
     {
         $this->ref = new \ReflectionProperty(\JMS\JobQueueBundle\Entity\Job::class, 'relatedEntities');
     }
@@ -40,8 +40,12 @@ class ManyToAnyListener
             return;
         }
 
-        $con = $event->getObjectManager()->getConnection();
-        $con->executeUpdate("DELETE FROM jms_job_related_entities WHERE job_id = :id", [
+        // ORM-specific events: getObjectManager() returns ObjectManager (no
+        // getConnection); getEntityManager() returns EntityManager (has it).
+        $con = $event->getObjectManager() instanceof \Doctrine\ORM\EntityManagerInterface
+            ? $event->getObjectManager()->getConnection()
+            : throw new \LogicException('ManyToAnyListener requires an EntityManager.');
+        $con->executeStatement("DELETE FROM jms_job_related_entities WHERE job_id = :id", [
             'id' => $entity->getId(),
         ]);
     }
@@ -53,17 +57,21 @@ class ManyToAnyListener
             return;
         }
 
-        $con = $event->getObjectManager()->getConnection();
+        // ORM-specific events: getObjectManager() returns ObjectManager (no
+        // getConnection); getEntityManager() returns EntityManager (has it).
+        $con = $event->getObjectManager() instanceof \Doctrine\ORM\EntityManagerInterface
+            ? $event->getObjectManager()->getConnection()
+            : throw new \LogicException('ManyToAnyListener requires an EntityManager.');
         foreach ($this->ref->getValue($entity) as $relatedEntity) {
             $relClass = \Doctrine\Common\Util\ClassUtils::getClass($relatedEntity);
             $relId = $this->registry->getManagerForClass($relClass)->getMetadataFactory()->getMetadataFor($relClass)->getIdentifierValues($relatedEntity);
             asort($relId);
 
-            if ( ! $relId) {
+            if ($relId === []) {
                 throw new \RuntimeException('The identifier for the related entity "'.$relClass.'" was empty.');
             }
 
-            $con->executeUpdate("INSERT INTO jms_job_related_entities (job_id, related_class, related_id) VALUES (:jobId, :relClass, :relId)", [
+            $con->executeStatement("INSERT INTO jms_job_related_entities (job_id, related_class, related_id) VALUES (:jobId, :relClass, :relId)", [
                 'jobId' => $entity->getId(),
                 'relClass' => $relClass,
                 'relId' => json_encode($relId),

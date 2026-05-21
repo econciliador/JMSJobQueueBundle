@@ -16,7 +16,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class JobController extends AbstractController
 {
-    public function __construct(private ManagerRegistry $registry, private JobManager $jobManager)
+    public function __construct(private readonly ManagerRegistry $registry, private readonly JobManager $jobManager)
     {
     }
 
@@ -38,7 +38,7 @@ class JobController extends AbstractController
             $qb->setParameter($i, $job->getId());
         }
 
-        if ( ! empty($jobFilter->command)) {
+        if ($jobFilter->command !== null && $jobFilter->command !== '') {
             $qb->andWhere($qb->expr()->orX(
                 $qb->expr()->like('j.command', ':commandQuery'),
                 $qb->expr()->like('j.args', ':commandQuery')
@@ -46,7 +46,7 @@ class JobController extends AbstractController
                 ->setParameter('commandQuery', '%'.$jobFilter->command.'%');
         }
 
-        if ( ! empty($jobFilter->state)) {
+        if ($jobFilter->state !== null && $jobFilter->state !== '') {
             $qb->andWhere($qb->expr()->eq('j.state', ':jobState'))
                 ->setParameter('jobState', $jobFilter->state);
         }
@@ -86,7 +86,9 @@ class JobController extends AbstractController
         $statisticData = $statisticOptions = [];
         if ($this->getParameter('jms_job_queue.statistics')) {
             $dataPerCharacteristic = [];
-            foreach ($this->registry->getManagerForClass(Job::class)->getConnection()->executeQuery("SELECT * FROM jms_job_statistics WHERE job_id = ".$job->getId()) as $row) {
+            /** @var \Doctrine\ORM\EntityManagerInterface $jobEm */
+            $jobEm = $this->registry->getManagerForClass(Job::class);
+            foreach ($jobEm->getConnection()->executeQuery("SELECT * FROM jms_job_statistics WHERE job_id = ".$job->getId()) as $row) {
                 $dataPerCharacteristic[$row['characteristic']][] = [
                     // hack because postgresql lower-cases all column names.
                     array_key_exists('createdAt', $row) ? $row['createdAt'] : $row['createdat'],
@@ -94,7 +96,7 @@ class JobController extends AbstractController
                 ];
             }
 
-            if ($dataPerCharacteristic) {
+            if ($dataPerCharacteristic !== []) {
                 $statisticData = [array_merge(['Time'], $chars = array_keys($dataPerCharacteristic))];
                 $startTime = strtotime((string) $dataPerCharacteristic[$chars[0]][0][0]);
                 $endTime = strtotime((string) $dataPerCharacteristic[$chars[0]][count($dataPerCharacteristic[$chars[0]])-1][0]);

@@ -45,8 +45,11 @@ class SafeObjectType extends Type
 
         $value = is_resource($value) ? stream_get_contents($value) : $value;
 
-        set_error_handler(function (int $code, string $message): bool {
-            throw ConversionException::conversionFailedUnserialization($this->getName(), $message);
+        // Inline the type name (instead of calling $this->getName()) because
+        // Type::getName() is deprecated in DBAL 4 in favour of TypeRegistry::lookupName().
+        $typeName = 'jms_job_safe_object';
+        set_error_handler(function (int $code, string $message) use ($typeName): bool {
+            throw ConversionException::conversionFailedUnserialization($typeName, $message);
         });
 
         try {

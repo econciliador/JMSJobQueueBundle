@@ -16,7 +16,7 @@ class CleanUpCommand extends Command
 {
     protected static $defaultName = 'jms-job-queue:clean-up';
 
-    public function __construct(private ManagerRegistry $registry, private JobManager $jobManager)
+    public function __construct(private readonly ManagerRegistry $registry, private readonly JobManager $jobManager)
     {
         parent::__construct();
     }
@@ -31,7 +31,7 @@ class CleanUpCommand extends Command
         ;
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    protected function execute(InputInterface $input, OutputInterface $output): int
     {
         /** @var EntityManager $em */
         $em = $this->registry->getManagerForClass(Job::class);
@@ -39,6 +39,8 @@ class CleanUpCommand extends Command
 
         $this->cleanUpExpiredJobs($em, $con, $input);
         $this->collectStaleJobs($em);
+
+        return self::SUCCESS;
     }
 
     private function collectStaleJobs(EntityManager $em)
@@ -91,8 +93,8 @@ class CleanUpCommand extends Command
             $count++;
 
             $result = $con->executeQuery($incomingDepsSql, ['id' => $job->getId()]);
-            if ($result->fetchColumn() !== false) {
-                $em->transactional(function() use ($em, $job) {
+            if ($result->fetchOne() !== false) {
+                $em->wrapInTransaction(function() use ($em, $job) {
                     $this->resolveDependencies($em, $job);
                     $em->remove($job);
                 });
@@ -129,7 +131,7 @@ class CleanUpCommand extends Command
             }
         }
 
-        $em->getConnection()->executeUpdate("DELETE FROM jms_job_dependencies WHERE dest_job_id = :id", ['id' => $job->getId()]);
+        $em->getConnection()->executeStatement("DELETE FROM jms_job_dependencies WHERE dest_job_id = :id", ['id' => $job->getId()]);
     }
 
     private function findExpiredJobs(EntityManager $em, InputInterface $input)
@@ -169,6 +171,6 @@ class CleanUpCommand extends Command
                 $excludedIds[] = $job->getId();
                 yield $job;
             }
-        } while ( ! empty($jobs));
+        } while ($jobs !== []);
     }
 }
