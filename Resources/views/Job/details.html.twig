@@ -136,8 +136,8 @@
                     </span>
                     {{ exception.class|split('\\')|last }}
 
-                    <span class="icon icon-close">{{ include('@Twig/images/icon-minus-square-o.svg') }}</span>
-                    <span class="icon icon-open">{{ include('@Twig/images/icon-plus-square-o.svg') }}</span>
+                    <span class="icon icon-close"><span class="glyphicon glyphicon-minus"></span></span>
+                    <span class="icon icon-open"><span class="glyphicon glyphicon-plus"></span></span>
                 </h3>
 
                 {% if exception.message is not empty and index > 1 %}
@@ -152,7 +152,7 @@
                     {% set _display_code_snippet = _is_first_user_code and ('/vendor/' not in trace.file) and ('/var/cache/' not in trace.file) and (trace.file is not empty) %}
                     {% if _display_code_snippet %}{% set _is_first_user_code = false %}{% endif %}
                     <div class="trace-line">
-                        {{ include('@Twig/Exception/trace.html.twig', { prefix: index, i: i, trace: trace, _display_code_snippet: _display_code_snippet, style: 'display' }, with_context = false) }}
+                        {{ include('@JMSJobQueue/Exception/trace.html.twig', { prefix: index, i: i, trace: trace, _display_code_snippet: _display_code_snippet, style: 'display' }, with_context = false) }}
                     </div>
                 {% endfor %}
             </div>
@@ -202,16 +202,16 @@
     </script>
     {% endif %}
 
-    {% include "@Twig/base_js.html.twig" %}
-
     <script>
         $(document).ready(function() {
-            // If the toolbar is also loaded, then toggling won't work as the toggling listeners are attached twice
-            // and eventually cancel each other out. We will attach them a third-time so that we get the same behavior
-            // as if they were only attached once.
-            if ($('#sf-toolbar').length > 0) {
-                Sfjs.createToggles();
-            }
+            $('.sf-toggle').each(function() {
+                var $target = $($(this).data('toggle-selector'));
+                if ($(this).data('toggle-initial') !== 'display') {
+                    $target.hide();
+                }
+            }).on('click', function() {
+                $($(this).data('toggle-selector')).toggle();
+            });
         });
     </script>
 {% endblock %}
