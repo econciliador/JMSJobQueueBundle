@@ -9,7 +9,7 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\Common\Collections\Criteria;
 use Doctrine\Common\Collections\Expr\ClosureExpressionVisitor;
 use Doctrine\Common\Collections\Selectable;
-use Doctrine\Common\Persistence\ManagerRegistry;
+use Doctrine\Persistence\ManagerRegistry;
 use JMS\JobQueueBundle\Entity\Job;
 
 /**
@@ -19,16 +19,12 @@ use JMS\JobQueueBundle\Entity\Job;
  *
  * @author Johannes M. Schmitt <schmittjoh@gmail.com>
  */
-class PersistentRelatedEntitiesCollection implements Collection, Selectable
+class PersistentRelatedEntitiesCollection implements Collection, Selectable, \Stringable
 {
-    private $registry;
-    private $job;
     private $entities;
 
-    public function __construct(ManagerRegistry $registry, Job $job)
+    public function __construct(private ManagerRegistry $registry, private Job $job)
     {
-        $this->registry = $registry;
-        $this->job = $job;
     }
 
     /**
@@ -133,9 +129,8 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      * @see containsKey()
      *
      * @param mixed $offset
-     * @return bool
      */
-    public function offsetExists($offset)
+    public function offsetExists($offset): bool
     {
         $this->initialize();
 
@@ -148,9 +143,8 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      * @see get()
      *
      * @param mixed $offset
-     * @return mixed
      */
-    public function offsetGet($offset)
+    public function offsetGet($offset): mixed
     {
         $this->initialize();
 
@@ -165,9 +159,8 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      *
      * @param mixed $offset
      * @param mixed $value
-     * @return bool
      */
-    public function offsetSet($offset, $value)
+    public function offsetSet($offset, $value): void
     {
         throw new \LogicException('Adding new related entities is not supported after initial creation.');
     }
@@ -178,9 +171,8 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      * @see remove()
      *
      * @param mixed $offset
-     * @return mixed
      */
-    public function offsetUnset($offset)
+    public function offsetUnset($offset): void
     {
         throw new \LogicException('unset() is not supported.');
     }
@@ -264,11 +256,7 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
     public function get($key)
     {
         $this->initialize();
-
-        if (isset($this->entities[$key])) {
-            return $this->entities[$key];
-        }
-        return null;
+        return $this->entities[$key] ?? null;
     }
 
     /**
@@ -302,7 +290,7 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      *
      * @return integer The number of elements in the collection.
      */
-    public function count()
+    public function count(): int
     {
         $this->initialize();
 
@@ -318,7 +306,7 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      * @param mixed $key
      * @param mixed $value
      */
-    public function set($key, $value)
+    public function set($key, $value): void
     {
         throw new \LogicException('set() is not supported.');
     }
@@ -353,7 +341,7 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      *
      * @return ArrayIterator
      */
-    public function getIterator()
+    public function getIterator(): \Traversable
     {
         $this->initialize();
 
@@ -364,7 +352,6 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      * Applies the given function to each element in the collection and returns
      * a new collection with the elements returned by the function.
      *
-     * @param Closure $func
      * @return Collection
      */
     public function map(Closure $func)
@@ -421,7 +408,7 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
     {
         $this->initialize();
 
-        $coll1 = $coll2 = array();
+        $coll1 = $coll2 = [];
         foreach ($this->entities as $key => $element) {
             if ($p($key, $element)) {
                 $coll1[$key] = $element;
@@ -429,23 +416,21 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
                 $coll2[$key] = $element;
             }
         }
-        return array(new ArrayCollection($coll1), new ArrayCollection($coll2));
+        return [new ArrayCollection($coll1), new ArrayCollection($coll2)];
     }
 
     /**
      * Returns a string representation of this object.
-     *
-     * @return string
      */
-    public function __toString()
+    public function __toString(): string
     {
-        return __CLASS__ . '@' . spl_object_hash($this);
+        return self::class . '@' . spl_object_hash($this);
     }
 
     /**
      * Clears the collection.
      */
-    public function clear()
+    public function clear(): void
     {
         throw new \LogicException('clear() is not supported.');
     }
@@ -472,7 +457,6 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
      * Select all elements from a selectable that match the criteria and
      * return a new collection containing these elements.
      *
-     * @param  Criteria $criteria
      * @return Collection
      */
     public function matching(Criteria $criteria)
@@ -507,27 +491,65 @@ class PersistentRelatedEntitiesCollection implements Collection, Selectable
         return new ArrayCollection($filtered);
     }
 
+    /**
+     * Returns the first element of this collection that satisfies the predicate.
+     *
+     * @param Closure $p The predicate.
+     * @return mixed The first element matching the predicate, or null.
+     */
+    public function findFirst(Closure $p): mixed
+    {
+        $this->initialize();
+
+        foreach ($this->entities as $key => $element) {
+            if ($p($key, $element)) {
+                return $element;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Applies an iteratively reducing function to the elements of this collection.
+     *
+     * @param Closure $func The reducer.
+     * @param mixed   $initial The initial accumulator value.
+     * @return mixed The resulting accumulator value.
+     */
+    public function reduce(Closure $func, mixed $initial = null): mixed
+    {
+        $this->initialize();
+
+        $accumulator = $initial;
+        foreach ($this->entities as $element) {
+            $accumulator = $func($accumulator, $element);
+        }
+
+        return $accumulator;
+    }
+
     private function initialize()
     {
         if (null !== $this->entities) {
             return;
         }
 
-        $con = $this->registry->getManagerForClass('JMSJobQueueBundle:Job')->getConnection();
-        $entitiesPerClass = array();
+        $con = $this->registry->getManagerForClass(\JMS\JobQueueBundle\Entity\Job::class)->getConnection();
+        $entitiesPerClass = [];
         $count = 0;
-        foreach ($con->query("SELECT related_class, related_id FROM jms_job_related_entities WHERE job_id = ".$this->job->getId()) as $data) {
+        foreach ($con->executeQuery("SELECT related_class, related_id FROM jms_job_related_entities WHERE job_id = ".$this->job->getId()) as $data) {
             $count += 1;
-            $entitiesPerClass[$data['related_class']][] = json_decode($data['related_id'], true);
+            $entitiesPerClass[$data['related_class']][] = json_decode((string) $data['related_id'], true);
         }
 
         if (0 === $count) {
-            $this->entities = array();
+            $this->entities = [];
 
             return;
         }
 
-        $entities = array();
+        $entities = [];
         foreach ($entitiesPerClass as $className => $ids) {
             $em = $this->registry->getManagerForClass($className);
             $qb = $em->createQueryBuilder()

@@ -11,7 +11,7 @@ use Symfony\Bundle\FrameworkBundle\Console\Application as BaseApplication;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Debug\Exception\FlattenException;
+use Symfony\Component\ErrorHandler\Exception\FlattenException;
 use Symfony\Component\HttpKernel\KernelInterface;
 
 /**
@@ -33,11 +33,12 @@ class Application extends BaseApplication
         $kernel->boot();
         if ($kernel->getContainer()->getParameter('jms_job_queue.statistics')) {
             $this->insertStatStmt = "INSERT INTO jms_job_statistics (job_id, characteristic, createdAt, charValue) VALUES (:jobId, :name, :createdAt, :value)";
-            register_tick_function(array($this, 'onTick'));
+            register_tick_function($this->onTick(...));
         }
     }
 
-    public function doRun(InputInterface $input, OutputInterface $output)
+    #[\Override]
+    public function doRun(InputInterface $input, OutputInterface $output): int
     {
         $this->input = $input;
 
@@ -59,9 +60,9 @@ class Application extends BaseApplication
             return;
         }
 
-        $characteristics = array(
+        $characteristics = [
             'memory' => memory_get_usage(),
-        );
+        ];
 
         if(!$this->insertStatStmt instanceof Statement){
             $this->insertStatStmt = $this->getConnection()->prepare($this->insertStatStmt);
@@ -85,23 +86,23 @@ class Application extends BaseApplication
 
         $this->getConnection()->executeUpdate(
             "UPDATE jms_jobs SET stackTrace = :trace, memoryUsage = :memoryUsage, memoryUsageReal = :memoryUsageReal WHERE id = :id",
-            array(
+            [
                 'id' => $jobId,
                 'memoryUsage' => memory_get_peak_usage(),
                 'memoryUsageReal' => memory_get_peak_usage(true),
                 'trace' => serialize($ex ? FlattenException::create($ex) : null),
-            ),
-            array(
+            ],
+            [
                 'id' => \PDO::PARAM_INT,
                 'memoryUsage' => \PDO::PARAM_INT,
                 'memoryUsageReal' => \PDO::PARAM_INT,
                 'trace' => \PDO::PARAM_LOB,
-            )
+            ]
         );
     }
 
     private function getConnection()
     {
-        return $this->getKernel()->getContainer()->get('doctrine')->getManagerForClass('JMSJobQueueBundle:Job')->getConnection();
+        return $this->getKernel()->getContainer()->get('doctrine')->getManagerForClass(\JMS\JobQueueBundle\Entity\Job::class)->getConnection();
     }
 }

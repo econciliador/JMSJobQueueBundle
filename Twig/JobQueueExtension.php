@@ -2,35 +2,40 @@
 
 namespace JMS\JobQueueBundle\Twig;
 
-class JobQueueExtension extends \Twig_Extension
+use Twig\Extension\AbstractExtension;
+use Twig\TwigFilter;
+use Twig\TwigFunction;
+use Twig\TwigTest;
+
+class JobQueueExtension extends AbstractExtension
 {
-    private $linkGenerators = array();
-
-    public function __construct(array $generators = array())
+    public function __construct(private array $linkGenerators = [])
     {
-        $this->linkGenerators = $generators;
     }
 
-    public function getTests()
+    #[\Override]
+    public function getTests(): array
     {
-        return array(
-            new \Twig_SimpleTest('jms_job_queue_linkable', array($this, 'isLinkable'))
-        );
+        return [
+            new TwigTest('jms_job_queue_linkable', $this->isLinkable(...))
+        ];
     }
 
-    public function getFunctions()
+    #[\Override]
+    public function getFunctions(): array
     {
-        return array(
-            new \Twig_SimpleFunction('jms_job_queue_path', array($this, 'generatePath'), array('is_safe' => array('html' => true)))
-        );
+        return [
+            new TwigFunction('jms_job_queue_path', $this->generatePath(...), ['is_safe' => ['html' => true]])
+        ];
     }
 
-    public function getFilters()
+    #[\Override]
+    public function getFilters(): array
     {
-        return array(
-            new \Twig_SimpleFilter('jms_job_queue_linkname', array($this, 'getLinkname')),
-            new \Twig_SimpleFilter('jms_job_queue_args', array($this, 'formatArgs'))
-        );
+        return [
+            new TwigFilter('jms_job_queue_linkname', $this->getLinkname(...)),
+            new TwigFilter('jms_job_queue_args', $this->formatArgs(...))
+        ];
     }
 
     public function formatArgs(array $args, $maxLength = 60)
@@ -38,7 +43,7 @@ class JobQueueExtension extends \Twig_Extension
         $str = '';
         $first = true;
         foreach ($args as $arg) {
-            $argLength = strlen($arg);
+            $argLength = strlen((string) $arg);
 
             if ( ! $first) {
                 $str .= ' ';
@@ -46,11 +51,11 @@ class JobQueueExtension extends \Twig_Extension
             $first = false;
 
             if (strlen($str) + $argLength > $maxLength) {
-                $str .= substr($arg, 0, $maxLength - strlen($str) - 4).'...';
+                $str .= substr((string) $arg, 0, $maxLength - strlen($str) - 4).'...';
                 break;
             }
 
-            $str .= escapeshellarg($arg);
+            $str .= escapeshellarg((string) $arg);
         }
 
         return $str;
@@ -75,7 +80,7 @@ class JobQueueExtension extends \Twig_Extension
             }
         }
 
-        throw new \RuntimeException(sprintf('The entity "%s" has no link generator.', get_class($entity)));
+        throw new \RuntimeException(sprintf('The entity "%s" has no link generator.', $entity::class));
     }
 
     public function getLinkname($entity)
@@ -86,7 +91,7 @@ class JobQueueExtension extends \Twig_Extension
             }
         }
 
-        throw new \RuntimeException(sprintf('The entity "%s" has no link generator.', get_class($entity)));
+        throw new \RuntimeException(sprintf('The entity "%s" has no link generator.', $entity::class));
     }
 
     public function getName()
