@@ -35,15 +35,15 @@ class ScheduleCommand extends Command
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $maxRuntime = $input->getOption('max-runtime');
+        $maxRuntime = (int) $input->getOption('max-runtime');
         if ($maxRuntime > 300) {
-            $maxRuntime += random_int(0, (integer)($input->getOption('max-runtime') * 0.05));
+            $maxRuntime += random_int(0, (int) round($maxRuntime * 0.05));
         }
         if ($maxRuntime <= 0) {
             throw new \RuntimeException('Max. runtime must be greater than zero.');
         }
 
-        $minJobInterval = (integer)$input->getOption('min-job-interval');
+        $minJobInterval = (int) $input->getOption('min-job-interval');
         if ($minJobInterval <= 0) {
             throw new \RuntimeException('Min. job interval must be greater than zero.');
         }
@@ -68,9 +68,10 @@ class ScheduleCommand extends Command
 
             $this->scheduleJobs($output, $jobSchedulers, $jobsLastRunAt);
 
-            $timeToWait = microtime(true) - $lastRunAt + $minJobInterval;
-            if ($timeToWait > 0) {
-                usleep((int) ($timeToWait * 1E6));
+            $elapsedTime = microtime(true) - $lastRunAt;
+            $timeToWaitInMicroseconds = (int) max(0, round(($minJobInterval - $elapsedTime) * 1000000));
+            if ($timeToWaitInMicroseconds > 0) {
+                usleep($timeToWaitInMicroseconds);
             }
         }
 
