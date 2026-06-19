@@ -2,7 +2,7 @@
 
 namespace JMS\JobQueueBundle\Command;
 
-use Doctrine\Common\Persistence\ManagerRegistry;
+use Doctrine\Persistence\ManagerRegistry;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Query;
 use JMS\JobQueueBundle\Console\CronCommand;
@@ -19,17 +19,9 @@ class ScheduleCommand extends Command
 {
     protected static $defaultName = 'jms-job-queue:schedule';
 
-    private $registry;
-    private $schedulers;
-    private $cronCommands;
-
-    public function __construct(ManagerRegistry $managerRegistry, iterable $schedulers, iterable $cronCommands)
+    public function __construct(private readonly ManagerRegistry $registry, private readonly iterable $schedulers, private readonly iterable $cronCommands)
     {
         parent::__construct();
-
-        $this->registry = $managerRegistry;
-        $this->schedulers = $schedulers;
-        $this->cronCommands = $cronCommands;
     }
 
     protected function configure()
@@ -41,26 +33,26 @@ class ScheduleCommand extends Command
         ;
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $maxRuntime = $input->getOption('max-runtime');
+        $maxRuntime = (int) $input->getOption('max-runtime');
         if ($maxRuntime > 300) {
-            $maxRuntime += random_int(0, (integer)($input->getOption('max-runtime') * 0.05));
+            $maxRuntime += random_int(0, (int) round($maxRuntime * 0.05));
         }
         if ($maxRuntime <= 0) {
             throw new \RuntimeException('Max. runtime must be greater than zero.');
         }
 
-        $minJobInterval = (integer)$input->getOption('min-job-interval');
+        $minJobInterval = (int) $input->getOption('min-job-interval');
         if ($minJobInterval <= 0) {
             throw new \RuntimeException('Min. job interval must be greater than zero.');
         }
 
         $jobSchedulers = $this->populateJobSchedulers();
-        if (empty($jobSchedulers)) {
+        if ($jobSchedulers === []) {
             $output->writeln('No job schedulers found, exiting...');
 
-            return 0;
+            return \Symfony\Component\Console\Command\Command::SUCCESS;
         }
 
         $jobsLastRunAt = $this->populateJobsLastRunAt($this->registry->getManagerForClass(CronJob::class), $jobSchedulers);
@@ -76,13 +68,14 @@ class ScheduleCommand extends Command
 
             $this->scheduleJobs($output, $jobSchedulers, $jobsLastRunAt);
 
-            $timeToWait = microtime(true) - $lastRunAt + $minJobInterval;
-            if ($timeToWait > 0) {
-                usleep($timeToWait * 1E6);
+            $elapsedTime = microtime(true) - $lastRunAt;
+            $timeToWaitInMicroseconds = (int) max(0, round(($minJobInterval - $elapsedTime) * 1000000));
+            if ($timeToWaitInMicroseconds > 0) {
+                usleep($timeToWaitInMicroseconds);
             }
         }
 
-        return 0;
+        return \Symfony\Component\Console\Command\Command::SUCCESS;
     }
 
     /**
@@ -98,7 +91,7 @@ class ScheduleCommand extends Command
                 continue;
             }
 
-            list($success, $newLastRunAt) = $this->acquireLock($name, $lastRunAt);
+            [$success, $newLastRunAt] = $this->acquireLock($name, $lastRunAt);
             $jobsLastRunAt[$name] = $newLastRunAt;
 
             if ($success) {
@@ -118,21 +111,21 @@ class ScheduleCommand extends Command
         $con = $em->getConnection();
 
         $now = new \DateTime();
-        $affectedRows = $con->executeUpdate(
+        $affectedRows = $con->executeStatement(
             "UPDATE jms_cron_jobs SET lastRunAt = :now WHERE command = :command AND lastRunAt = :lastRunAt",
-            array(
+            [
                 'now' => $now,
                 'command' => $commandName,
                 'lastRunAt' => $lastRunAt,
-            ),
-            array(
+            ],
+            [
                 'now' => 'datetime',
                 'lastRunAt' => 'datetime',
-            )
+            ]
         );
 
         if ($affectedRows > 0) {
-            return array(true, $now);
+            return [true, $now];
         }
 
         /** @var CronJob $cronJob */
@@ -141,14 +134,14 @@ class ScheduleCommand extends Command
             ->setHint(Query::HINT_REFRESH, true)
             ->getSingleResult();
 
-        return array(false, $cronJob->getLastRunAt());
+        return [false, $cronJob->getLastRunAt()];
     }
 
     private function populateJobSchedulers()
     {
         $schedulers = [];
+        /** @var JobScheduler $scheduler */
         foreach ($this->schedulers as $scheduler) {
-            /** @var JobScheduler $scheduler */
             foreach ($scheduler->getCommands() as $name) {
                 $schedulers[$name] = $scheduler;
             }
@@ -168,7 +161,7 @@ class ScheduleCommand extends Command
 
     private function populateJobsLastRunAt(EntityManager $em, array $jobSchedulers)
     {
-        $jobsLastRunAt = array();
+        $jobsLastRunAt = [];
 
         foreach ($em->getRepository(CronJob::class)->findAll() as $job) {
             /** @var CronJob $job */

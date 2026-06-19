@@ -16,19 +16,16 @@ use JMS\JobQueueBundle\Entity\Job;
  */
 class ManyToAnyListener
 {
-    private $registry;
     private $ref;
 
-    public function __construct(\Doctrine\Common\Persistence\ManagerRegistry $registry)
+    public function __construct(private readonly \Doctrine\Persistence\ManagerRegistry $registry)
     {
-        $this->registry = $registry;
-        $this->ref = new \ReflectionProperty('JMS\JobQueueBundle\Entity\Job', 'relatedEntities');
-        $this->ref->setAccessible(true);
+        $this->ref = new \ReflectionProperty(\JMS\JobQueueBundle\Entity\Job::class, 'relatedEntities');
     }
 
-    public function postLoad(\Doctrine\ORM\Event\LifecycleEventArgs $event)
+    public function postLoad(\Doctrine\ORM\Event\PostLoadEventArgs $event)
     {
-        $entity = $event->getEntity();
+        $entity = $event->getObject();
         if ( ! $entity instanceof \JMS\JobQueueBundle\Entity\Job) {
             return;
         }
@@ -36,41 +33,49 @@ class ManyToAnyListener
         $this->ref->setValue($entity, new PersistentRelatedEntitiesCollection($this->registry, $entity));
     }
 
-    public function preRemove(LifecycleEventArgs $event)
+    public function preRemove(\Doctrine\ORM\Event\PreRemoveEventArgs $event)
     {
-        $entity = $event->getEntity();
+        $entity = $event->getObject();
         if ( ! $entity instanceof Job) {
             return;
         }
 
-        $con = $event->getEntityManager()->getConnection();
-        $con->executeUpdate("DELETE FROM jms_job_related_entities WHERE job_id = :id", array(
+        // ORM-specific events: getObjectManager() returns ObjectManager (no
+        // getConnection); getEntityManager() returns EntityManager (has it).
+        $con = $event->getObjectManager() instanceof \Doctrine\ORM\EntityManagerInterface
+            ? $event->getObjectManager()->getConnection()
+            : throw new \LogicException('ManyToAnyListener requires an EntityManager.');
+        $con->executeStatement("DELETE FROM jms_job_related_entities WHERE job_id = :id", [
             'id' => $entity->getId(),
-        ));
+        ]);
     }
 
-    public function postPersist(\Doctrine\ORM\Event\LifecycleEventArgs $event)
+    public function postPersist(\Doctrine\ORM\Event\PostPersistEventArgs $event)
     {
-        $entity = $event->getEntity();
+        $entity = $event->getObject();
         if ( ! $entity instanceof \JMS\JobQueueBundle\Entity\Job) {
             return;
         }
 
-        $con = $event->getEntityManager()->getConnection();
+        // ORM-specific events: getObjectManager() returns ObjectManager (no
+        // getConnection); getEntityManager() returns EntityManager (has it).
+        $con = $event->getObjectManager() instanceof \Doctrine\ORM\EntityManagerInterface
+            ? $event->getObjectManager()->getConnection()
+            : throw new \LogicException('ManyToAnyListener requires an EntityManager.');
         foreach ($this->ref->getValue($entity) as $relatedEntity) {
             $relClass = \Doctrine\Common\Util\ClassUtils::getClass($relatedEntity);
             $relId = $this->registry->getManagerForClass($relClass)->getMetadataFactory()->getMetadataFor($relClass)->getIdentifierValues($relatedEntity);
             asort($relId);
 
-            if ( ! $relId) {
+            if ($relId === []) {
                 throw new \RuntimeException('The identifier for the related entity "'.$relClass.'" was empty.');
             }
 
-            $con->executeUpdate("INSERT INTO jms_job_related_entities (job_id, related_class, related_id) VALUES (:jobId, :relClass, :relId)", array(
+            $con->executeStatement("INSERT INTO jms_job_related_entities (job_id, related_class, related_id) VALUES (:jobId, :relClass, :relId)", [
                 'jobId' => $entity->getId(),
                 'relClass' => $relClass,
                 'relId' => json_encode($relId),
-            ));
+            ]);
         }
     }
 
@@ -79,15 +84,15 @@ class ManyToAnyListener
         $schema = $event->getSchema();
 
         // When using multiple entity managers ignore events that are triggered by other entity managers.
-        if ($event->getEntityManager()->getMetadataFactory()->isTransient('JMS\JobQueueBundle\Entity\Job')) {
+        if ($event->getEntityManager()->getMetadataFactory()->isTransient(\JMS\JobQueueBundle\Entity\Job::class)) {
             return;
         }
 
         $table = $schema->createTable('jms_job_related_entities');
-        $table->addColumn('job_id', 'bigint', array('notnull' => true, 'unsigned' => true));
-        $table->addColumn('related_class', 'string', array('notnull' => true, 'length' => '150'));
-        $table->addColumn('related_id', 'string', array('notnull' => true, 'length' => '100'));
-        $table->setPrimaryKey(array('job_id', 'related_class', 'related_id'));
-        $table->addForeignKeyConstraint('jms_jobs', array('job_id'), array('id'));
+        $table->addColumn('job_id', 'bigint', ['notnull' => true, 'unsigned' => true]);
+        $table->addColumn('related_class', 'string', ['notnull' => true, 'length' => '150']);
+        $table->addColumn('related_id', 'string', ['notnull' => true, 'length' => '100']);
+        $table->setPrimaryKey(['job_id', 'related_class', 'related_id']);
+        $table->addForeignKeyConstraint('jms_jobs', ['job_id'], ['id']);
     }
 }
