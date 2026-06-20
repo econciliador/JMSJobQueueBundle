@@ -90,7 +90,7 @@ class Application extends BaseApplication
                 'id' => $jobId,
                 'memoryUsage' => memory_get_peak_usage(),
                 'memoryUsageReal' => memory_get_peak_usage(true),
-                'trace' => serialize($ex !== null ? FlattenException::create($ex) : null),
+                'trace' => serialize($ex !== null ? FlattenException::createFromThrowable($ex) : null),
             ],
             [
                 'id' => \PDO::PARAM_INT,
